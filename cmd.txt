@@ -1,0 +1,3 @@
+when raw data changes
+run this command  from project folder to 
+ python pipeline/build_data.py
