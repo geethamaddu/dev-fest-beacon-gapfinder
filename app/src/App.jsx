@@ -4,7 +4,8 @@ import Dashboard from './pages/Dashboard.jsx'
 import MapFinder from './pages/MapFinder.jsx'
 import History from './pages/History.jsx'
 import About from './pages/About.jsx'
-import { REGIONS, regionById } from './lib/regions.js'
+import ChatPanel from './components/ChatPanel.jsx'
+import { REGIONS, regionById, regionIdForGeoid } from './lib/regions.js'
 import { analyze } from './lib/classify.js'
 
 const PAGES = [
@@ -27,6 +28,7 @@ export default function App() {
   const [entries, setEntries] = useState({})
   const [error, setError] = useState(null)
   const [selected, setSelected] = useState(null) // { geoid, zoom }
+  const [chatFocus, setChatFocus] = useState(null) // tract the user asked the chatbot about
   const region = regionById(regionId)
   const entry = entries[regionId]
 
@@ -64,18 +66,37 @@ export default function App() {
     if (goToMap) window.location.hash = '#/map'
   }
 
+  // Tract link in a chatbot answer: switch region if needed, then open it on the map.
+  function openFromChat(geoid) {
+    const r = regionIdForGeoid(geoid)
+    if (r && r !== regionId) changeRegion(r)
+    openTract(geoid, { zoom: true, goToMap: true })
+  }
+
+  function askAboutTract(p) {
+    // Same label format the chatbot uses ("Orange tract 013507"), so questions and answers match.
+    setChatFocus({ geoid: p.geoid, label: `${p.county} tract ${p.geoid.slice(5)}`, county: p.county, regionId, at: Date.now() })
+  }
+
   let body
   if (page === 'about') body = <About entries={entries} />
   else if (page === 'history') body = <History onOpen={(r, g) => { if (r !== regionId) changeRegion(r); openTract(g, { zoom: true, goToMap: true, source: 'history' }) }} />
   else if (error) body = <div className="page"><div className="card error">{error}</div></div>
   else if (!entry) body = <div className="page"><div className="card">Loading {region.name} data...</div></div>
-  else if (page === 'map') body = <MapFinder entry={entry} region={region} selected={selected} onSelect={openTract} />
+  else if (page === 'map') body = <MapFinder entry={entry} region={region} selected={selected} onSelect={openTract} onAsk={askAboutTract} />
   else body = <Dashboard entry={entry} region={region} onOpen={(g) => openTract(g, { zoom: true, goToMap: true, source: 'dashboard' })} />
 
   return (
     <div className="app">
       <NavBar pages={PAGES} page={page} regionId={regionId} onRegion={changeRegion} />
       <main>{body}</main>
+      <ChatPanel
+        regionId={regionId}
+        selectedTract={selected?.geoid}
+        focus={chatFocus}
+        onClearFocus={() => setChatFocus(null)}
+        onOpenTract={openFromChat}
+      />
     </div>
   )
 }

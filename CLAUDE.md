@@ -35,8 +35,8 @@ Static data pipeline plus a React web app. Python joins the Beacon example datas
 
 Top nav bar (white, orange bottom border): official Beacon logo (dark version on the light bar, cut from `docs/Beacon_Brand_Guidelines.pdf` page 2, files `app/public/beacon-logo-white.png` and `-dark.png`) plus "Gap Finder" on the left; nav items Dashboard, Map Finder, History, About and the region picker (Central Florida, New York City, Salt Lake City) on the right. Colors follow the brand guide: Primary 900 `#1E343F`, Primary 700 `#385981`, Primary 500 `#6B8FA8`, Accent Orange `#F79122`, Success `#388D58`, Error `#C44A4A`; font Avenir with system fallbacks.
 
-- Dashboard: stat cards (tracts, classic deserts, transportation gaps, blind spots, tracts needing review, decisions pending); "Top problems to address" (top 10 flagged tracts: both gap types first, then confidence, then poverty) with "Open on map"; review progress; gaps by county.
-- Map Finder: tracts colored by gap type with a legend and a "Fit region" button. Right panel is collapsible (chevron tab on the panel's left edge; chevron on the map's right edge to expand) and horizontally resizable (drag its left edge, 280 to 760 px, width remembered). Panel shows the selected tract's detail, gap-type counts, test scenarios and a data note.
+- Dashboard: stat cards (tracts, classic deserts, transportation gaps, SNAP enrollment gaps, blind spots, and "Actions pending" = flagged tracts with no approve/reject yet, shown as "X of Y" and updated live on approve, reject or undo); "Top problems to address" (top 10 flagged tracts: both gap types first, then confidence, then poverty) with "Open on map"; review progress; gaps by county.
+- Map Finder: tracts colored by gap type with a legend and a "Fit region" button. Right panel is collapsible (chevron tab on the panel's left edge; chevron on the map's right edge to expand) and horizontally resizable (drag its left edge, 280 to 760 px, width remembered). Panel shows the selected tract's detail, gap-type counts and a data note.
 - Tract detail: gap type(s), confidence, review tier, supporting and limiting evidence, recommended resources per gap type (region-specific link), an optional reason box with Approve / Reject (the reason is saved with the decision; there is no separate note button), Undo for the latest decision on the tract, and the list of past reasons.
 - History: actions only (Approved, Rejected, Undo) with time, region, tract and reason; filter by action, search, Undo button on the latest decision of a tract, Open button, Clear history. Page views, region changes and opened tracts are NOT recorded.
 - About: team (Phanindhar Golla and Geetha Maddu, software developers), what the app does, data sources.
@@ -74,6 +74,7 @@ Census TIGERweb boundaries ─┘
 - App: `app/` is a Vite + React 18 project. `src/App.jsx` (hash routing, region loading), `src/components/` (NavBar, BeaconLogo, TractDetail), `src/pages/` (Dashboard, MapFinder, History, About), `src/lib/classify.js` (taxonomy, confidence, tiers, evidence, resources), `src/lib/store.js` (decisions, notes, history in localStorage), `src/lib/regions.js` (regions and resource links).
 
 - Data is static (rebuilt on demand). User decisions are stored separately in localStorage.
+- Chatbot ("Chat About Data", floating button): `src/components/ChatPanel.jsx` posts to `/api/chat` (Vite proxies to port 8787). `server/index.js` (Node, no framework) calls the free Gemini API (`GEMINI_API_KEY` and optional `GEMINI_MODEL` in `app/.env`, see `.env.example`; `.env` is gitignored) with function calling. `server/tools.js` holds the tools (`region_info`, `get_tract`, `query_tracts`, `aggregate`). They reuse `classify.js`, so the chatbot and the map always agree: each tract result has `main_gap_type`, `all_gap_types`, `flagged` (any of Classic, Transportation, SNAP Enrollment Gap), per-type `recommended_actions` with their confidence, and for SNAP gaps `snap_gap_confidence`, its reason and `snap_cautions`. When `classify.js` changes, update `server/tools.js` and run `npm test` (the tests check the chatbot's SNAP counts against the numbers above). The chatbot does not write to History (actions only). Anti-hallucination: temperature 0, a strict system prompt, every statistic must come from a tool, and the server flags any number in an answer that it can't find in the tool results. Team decisions and notes are not sent to Gemini. Tract names and IDs in answers are links that open the tract on the map (switching region if needed): the server returns the tracts an answer mentions, and `src/lib/linkify.js` (a remark plugin) links them after markdown parsing. The tract detail panel has an "Ask about this tract" button that focuses the chat on that tract and offers four tract questions (why flagged, compare with county average, what to check before approving, other tracts with the same gap type). `aggregate` returns `average_per_tract` so the model never divides. Default model `gemini-flash-lite-latest`, falling back to `gemini-flash-latest` (`GEMINI_FALLBACK_MODELS`), with a 20 s timeout per call and retries on 429/5xx. In November 2026 testing the free Flash model often returned 503 "high demand", and `gemini-2.5-flash` was retired for new keys.
 
 Commands:
 
@@ -85,6 +86,8 @@ python pipeline/build_data.py
 cd app
 npm install
 npm run dev        # http://localhost:5173
+npm run server     # chat server on :8787 (second terminal; needs app/.env)
+npm test           # chatbot data-tool tests, no key needed
 npm run build      # production build in app/dist
 ```
 

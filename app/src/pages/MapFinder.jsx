@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import TractDetail from '../components/TractDetail.jsx'
-import { CONF_RANK, SNAP_COLOR, TYPES, TYPE_ORDER, f1, tractLabel, typeConfidence } from '../lib/classify.js'
+import { SNAP_COLOR, TYPES, TYPE_ORDER, f1 } from '../lib/classify.js'
 
 const MIN_W = 280
 const MAX_W = 760
@@ -17,7 +17,7 @@ function Chevron({ dir }) {
   )
 }
 
-export default function MapFinder({ entry, region, selected, onSelect }) {
+export default function MapFinder({ entry, region, selected, onSelect, onAsk }) {
   const mapEl = useRef(null)
   const mapRef = useRef(null)
   const layerRef = useRef(null)
@@ -108,20 +108,6 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
     setCollapsed(!open)
   }
 
-  const scenarios = useMemo(() => {
-    const ps = fc.features.map((f) => f.properties)
-    const pick = (t) => ps.filter((p) => p._types.includes(t))
-      .sort((a, b) => CONF_RANK[typeConfidence(a, t) || 'Low'] - CONF_RANK[typeConfidence(b, t) || 'Low'] || (b.poverty_pct || 0) - (a.poverty_pct || 0))[0]
-    return [
-      { label: 'Clear classic food desert', t: 'classic', why: 'High poverty and LILA flag' },
-      { label: 'Transportation-compounded', t: 'transport', why: 'LILA flag and high no-transport rate', na: !region.hasTransport },
-      { label: 'SNAP enrollment gap', t: 'snap', why: 'Many poor households not on SNAP' },
-      { label: 'Blind spot', t: 'blind', why: 'Moderate indicators, no top quartile' },
-      { label: 'Insufficient data', t: 'insufficient', why: 'Missing estimate or tiny population' },
-      { label: 'Partial signal', t: 'partial', why: 'One indicator high, no gap type' },
-    ].map((s) => ({ ...s, p: s.na ? null : pick(s.t) }))
-  }, [fc, region])
-
   return (
     <div className="map-page">
       <div className="map-wrap">
@@ -155,7 +141,7 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
           </div>
           <div className="panel-body">
             {selectedProps
-              ? <TractDetail key={selectedProps.geoid} p={selectedProps} region={region} Q={analysis.Q} />
+              ? <TractDetail key={selectedProps.geoid} p={selectedProps} region={region} Q={analysis.Q} onAsk={onAsk} />
               : <div className="card muted">Click a tract on the map to see its gap type, evidence and recommended resources.</div>}
 
             <div className="card">
@@ -168,23 +154,6 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
               ))}
               <p className="lbl top-gap">A tract can have more than one gap type ({analysis.flagged} tracts have at least one problem gap).</p>
               <p className="lbl">Top quartile: poverty {f1(analysis.Q.pov[2])} or more{analysis.Q.trn ? `; no reliable transportation ${f1(analysis.Q.trn[2])} or more` : ''}.</p>
-            </div>
-
-            <div className="card">
-              <p className="lbl">Test scenarios (click to open an example tract)</p>
-              {scenarios.map((s) => (
-                <div
-                  key={s.label}
-                  className={`row-item ${s.p ? 'clickable' : ''}`}
-                  onClick={() => s.p && onSelect(s.p.geoid, { zoom: true, source: 'scenario' })}
-                >
-                  <div>
-                    <div>{s.label}</div>
-                    <small>{s.na ? 'Not available: CDC transportation data is empty for this region' : s.p ? `${tractLabel(s.p)}: ${s.why}` : 'No example in this region'}</small>
-                  </div>
-                  <b className={s.na ? 'muted' : s.p ? 'pass' : 'fail'}>{s.na ? 'N/A' : s.p ? 'Pass' : 'None'}</b>
-                </div>
-              ))}
             </div>
 
             <div className="card warn">
