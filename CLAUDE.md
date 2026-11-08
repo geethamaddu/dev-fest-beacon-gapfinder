@@ -37,11 +37,11 @@ Top nav bar (white, orange bottom border): official Beacon logo (dark version on
 
 - Dashboard: stat cards (tracts, classic deserts, transportation gaps, blind spots, tracts needing review, decisions pending); "Top problems to address" (top 10 flagged tracts: both gap types first, then confidence, then poverty) with "Open on map"; review progress; gaps by county.
 - Map Finder: tracts colored by gap type with a legend and a "Fit region" button. Right panel is collapsible (chevron tab on the panel's left edge; chevron on the map's right edge to expand) and horizontally resizable (drag its left edge, 280 to 760 px, width remembered). Panel shows the selected tract's detail, gap-type counts, test scenarios and a data note.
-- Tract detail: gap type(s), confidence, review tier, supporting and limiting evidence, recommended resources (region-specific link), Approve / Reject with an optional note, Add note, and the note list.
-- History: every action (page views, region changes, tracts opened, test scenarios, decisions, notes, panel collapse/expand) with time, filter by type, search, Open button for tract entries, Clear history.
+- Tract detail: gap type(s), confidence, review tier, supporting and limiting evidence, recommended resources per gap type (region-specific link), an optional reason box with Approve / Reject (the reason is saved with the decision; there is no separate note button), Undo for the latest decision on the tract, and the list of past reasons.
+- History: actions only (Approved, Rejected, Undo) with time, region, tract and reason; filter by action, search, Undo button on the latest decision of a tract, Open button, Clear history. Page views, region changes and opened tracts are NOT recorded.
 - About: team (Phanindhar Golla and Geetha Maddu, software developers), what the app does, data sources.
 
-Decisions, notes and history are stored in the browser's localStorage (per browser, not shared).
+Decisions and history are stored in the browser's localStorage (per browser, not shared). Undo restores the tract's previous decision (or pending) and marks the original entry as undone.
 
 Gap types (quartiles computed within the selected region; a value of 0 never counts as high):
 
@@ -49,10 +49,13 @@ Gap types (quartiles computed within the selected region; a value of 0 never cou
 |---|---|---|
 | Classic Food Desert | Poverty in top quartile AND LILA flag (1/2 mile urban, 10 miles rural) | Nearest food bank or pantry, mobile pantry if listed |
 | Transportation-Compounded Gap | LILA flag AND top-quartile no-reliable-transportation rate (NYC and SLC only) | Mobile pantry or delivery programs, transit-accessible locations |
-| Possible Blind Spot | No indicator in top quartile, but at least two available indicators in the second-highest quartile | No auto-recommendation; review required |
+| SNAP Enrollment Gap (our addition) | Poverty at or above the region median AND share of poor households not on SNAP in the top quartile (at least 30 poor households) | SNAP registration drive: sign-up events, help applying |
+| Possible Blind Spot | No problem type above and no indicator in top quartile, but at least two available indicators in the second-highest quartile | No auto-recommendation; review required |
 | Partial signal (our addition) | One indicator high, no taxonomy match | No auto-recommendation; review required |
 | No gap flagged | Everything else | None needed |
 | Insufficient data | Missing poverty or access value, or population under 500 | Review required |
+
+A tract can have more than one problem gap type (Classic Food Desert, Transportation-Compounded Gap, SNAP Enrollment Gap); the first is its main type (map color, review tier) and each brings its own recommendation. SNAP Enrollment Gap uses `poor_hh_no_snap / poor_hh` from S2201; its confidence is Low when fewer than 100 poor households, 95% or more not on SNAP (possible student housing or small sample), or the tract is Low confidence. A "Outline all SNAP gaps" map toggle outlines every tract with a SNAP gap, including those where it is the second type. Current SNAP counts: Central Florida 33, NYC 95, Salt Lake City 24.
 
 Confidence: Low if population under 1,000 or poverty margin of error over 10 points; Medium if margin over 5; otherwise High.
 

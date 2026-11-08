@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import TractDetail from '../components/TractDetail.jsx'
-import { CONF_RANK, TYPES, TYPE_ORDER, f1, tractLabel } from '../lib/classify.js'
-import { logEvent } from '../lib/store.js'
+import { CONF_RANK, SNAP_COLOR, TYPES, TYPE_ORDER, f1, tractLabel, typeConfidence } from '../lib/classify.js'
 
 const MIN_W = 280
 const MAX_W = 760
@@ -26,15 +25,21 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
   const onSelectRef = useRef(onSelect)
   const [width, setWidth] = useState(readWidth)
   const [collapsed, setCollapsed] = useState(false)
+  const [showSnap, setShowSnap] = useState(false)
+  const showSnapRef = useRef(showSnap)
   selectedRef.current = selected
   onSelectRef.current = onSelect
+  showSnapRef.current = showSnap
 
   const { fc, analysis } = entry
   const selectedProps = selected && fc.features.find((f) => f.properties.geoid === selected.geoid)?.properties
 
   const style = (f) => {
     const sel = selectedRef.current?.geoid === f.properties.geoid
-    return { fillColor: TYPES[f.properties._t].color, fillOpacity: 0.65, color: sel ? '#000' : '#555', weight: sel ? 3 : 0.5 }
+    const base = { fillColor: TYPES[f.properties._t].color, fillOpacity: 0.65, color: '#555', weight: 0.5, dashArray: null }
+    if (sel) return { ...base, color: '#000', weight: 3 }
+    if (showSnapRef.current && f.properties._types.includes('snap')) return { ...base, color: SNAP_COLOR, weight: 2.5, dashArray: '5 3' }
+    return base
   }
 
   useEffect(() => {
@@ -73,6 +78,10 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
   }, [selected])
 
   useEffect(() => {
+    layerRef.current?.setStyle(style)
+  }, [showSnap])
+
+  useEffect(() => {
     const t = setTimeout(() => mapRef.current?.invalidateSize(), 0)
     return () => clearTimeout(t)
   }, [width, collapsed])
@@ -97,16 +106,16 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
 
   function togglePanel(open) {
     setCollapsed(!open)
-    logEvent('panel', { region: region.id, detail: open ? 'Expanded the side panel' : 'Collapsed the side panel' })
   }
 
   const scenarios = useMemo(() => {
     const ps = fc.features.map((f) => f.properties)
-    const pick = (t) => ps.filter((p) => p._t === t)
-      .sort((a, b) => CONF_RANK[a._conf] - CONF_RANK[b._conf] || (b.poverty_pct || 0) - (a.poverty_pct || 0))[0]
+    const pick = (t) => ps.filter((p) => p._types.includes(t))
+      .sort((a, b) => CONF_RANK[typeConfidence(a, t) || 'Low'] - CONF_RANK[typeConfidence(b, t) || 'Low'] || (b.poverty_pct || 0) - (a.poverty_pct || 0))[0]
     return [
       { label: 'Clear classic food desert', t: 'classic', why: 'High poverty and LILA flag' },
       { label: 'Transportation-compounded', t: 'transport', why: 'LILA flag and high no-transport rate', na: !region.hasTransport },
+      { label: 'SNAP enrollment gap', t: 'snap', why: 'Many poor households not on SNAP' },
       { label: 'Blind spot', t: 'blind', why: 'Moderate indicators, no top quartile' },
       { label: 'Insufficient data', t: 'insufficient', why: 'Missing estimate or tiny population' },
       { label: 'Partial signal', t: 'partial', why: 'One indicator high, no gap type' },
@@ -118,6 +127,10 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
       <div className="map-wrap">
         <div ref={mapEl} className="map" />
         <button className="map-btn fit" onClick={() => mapRef.current.fitBounds(layerRef.current.getBounds())}>Fit {region.name}</button>
+        <label className="map-btn snap-toggle">
+          <input type="checkbox" checked={showSnap} onChange={(e) => setShowSnap(e.target.checked)} />
+          Outline all SNAP gaps ({analysis.counts.snap})
+        </label>
         {collapsed && (
           <button className="edge-toggle expand" onClick={() => togglePanel(true)} aria-label="Expand panel" title="Expand panel">
             <Chevron dir="left" />
@@ -127,6 +140,7 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
           {TYPE_ORDER.filter((t) => t !== 'transport' || region.hasTransport).map((t) => (
             <div key={t}><i className="sw" style={{ background: TYPES[t].color }} />{TYPES[t].name}</div>
           ))}
+          {showSnap && <div><i className="sw sw-dashed" style={{ borderColor: SNAP_COLOR }} />Has a SNAP Enrollment Gap (outline)</div>}
         </div>
       </div>
 
@@ -152,7 +166,8 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
                   <b>{t === 'transport' && !region.hasTransport ? 'N/A' : analysis.counts[t]}</b>
                 </div>
               ))}
-              <p className="lbl top-gap">Top quartile: poverty {f1(analysis.Q.pov[2])} or more{analysis.Q.trn ? `; no reliable transportation ${f1(analysis.Q.trn[2])} or more` : ''}.</p>
+              <p className="lbl top-gap">A tract can have more than one gap type ({analysis.flagged} tracts have at least one problem gap).</p>
+              <p className="lbl">Top quartile: poverty {f1(analysis.Q.pov[2])} or more{analysis.Q.trn ? `; no reliable transportation ${f1(analysis.Q.trn[2])} or more` : ''}.</p>
             </div>
 
             <div className="card">
@@ -165,7 +180,7 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
                 >
                   <div>
                     <div>{s.label}</div>
-                    <small>{s.na ? 'Not available: no transportation data for this region' : s.p ? `${tractLabel(s.p)}: ${s.why}` : 'No example in this region'}</small>
+                    <small>{s.na ? 'Not available: CDC transportation data is empty for this region' : s.p ? `${tractLabel(s.p)}: ${s.why}` : 'No example in this region'}</small>
                   </div>
                   <b className={s.na ? 'muted' : s.p ? 'pass' : 'fail'}>{s.na ? 'N/A' : s.p ? 'Pass' : 'None'}</b>
                 </div>
@@ -173,9 +188,8 @@ export default function MapFinder({ entry, region, selected, onSelect }) {
             </div>
 
             <div className="card warn">
-              {region.hasTransport
-                ? 'Data note: poverty and SNAP figures are 2024 Census estimates with margins of error. Transportation is a CDC model-based estimate. SNAP retailers are not joined to tracts.'
-                : 'Data note: no-reliable-transportation data is not available for this region, so Transportation-Compounded gaps cannot be detected. Poverty and SNAP figures are 2024 Census estimates with margins of error.'}
+              <p style={{ margin: 0 }}><b>Transportation:</b> {region.transportNote}</p>
+              <p style={{ margin: '6px 0 0' }}>Poverty and SNAP figures are 2024 Census estimates with margins of error. SNAP retailer addresses are not joined to tracts.</p>
             </div>
           </div>
         </aside>

@@ -1,9 +1,11 @@
-// Decisions, notes and activity history, kept in the browser's localStorage.
+// Decisions (approve / reject with an optional note) and the action history,
+// kept in the browser's localStorage. History records actions only: decisions and undos.
 import { useSyncExternalStore } from 'react'
 
 const KEY_DECISIONS = 'bgf_decisions_v1'
 const KEY_HISTORY = 'bgf_history_v1'
 const MAX_HISTORY = 2000
+const ACTION_TYPES = ['decision', 'undo']
 
 function load(key, fallback) {
   try {
@@ -14,7 +16,11 @@ function load(key, fallback) {
   }
 }
 
-let state = { decisions: load(KEY_DECISIONS, {}), history: load(KEY_HISTORY, []) }
+// Older versions also logged page views, region changes and notes; keep only actions.
+let state = {
+  decisions: load(KEY_DECISIONS, {}),
+  history: load(KEY_HISTORY, []).filter((h) => ACTION_TYPES.includes(h.type)),
+}
 const subscribers = new Set()
 
 function commit(next) {
@@ -29,29 +35,45 @@ function commit(next) {
 }
 
 const now = () => new Date().toISOString()
+const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 export const decisionKey = (regionId, geoid) => `${regionId}:${geoid}`
-
-export function logEvent(type, info = {}) {
-  const entry = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ts: now(), type, ...info }
-  commit({ ...state, history: [entry, ...state.history].slice(0, MAX_HISTORY) })
-}
+const verb = (status) => (status === 'approved' ? 'Approved' : 'Rejected')
 
 export function setDecision(regionId, geoid, label, status, note) {
   const key = decisionKey(regionId, geoid)
-  const cur = state.decisions[key] || { status: 'pending', notes: [] }
-  const notes = note ? [...cur.notes, { ts: now(), text: note, status }] : cur.notes
-  commit({ ...state, decisions: { ...state.decisions, [key]: { status, notes, updated: now() } } })
-  logEvent('decision', {
-    region: regionId, geoid, label,
-    detail: `${status === 'approved' ? 'Approved' : 'Rejected'} ${label}${note ? `: "${note}"` : ''}`,
+  const prev = state.decisions[key] || null
+  const notes = [...(prev?.notes || []), ...(note ? [{ ts: now(), text: note, status }] : [])]
+  const entry = {
+    id: newId(), ts: now(), type: 'decision', region: regionId, geoid, label, status, note: note || '', prev,
+    detail: `${verb(status)} ${label}${note ? `: "${note}"` : ''}`,
+  }
+  commit({
+    decisions: { ...state.decisions, [key]: { status, notes, updated: now() } },
+    history: [entry, ...state.history].slice(0, MAX_HISTORY),
   })
 }
 
-export function addNote(regionId, geoid, label, note) {
-  const key = decisionKey(regionId, geoid)
-  const cur = state.decisions[key] || { status: 'pending', notes: [] }
-  commit({ ...state, decisions: { ...state.decisions, [key]: { ...cur, notes: [...cur.notes, { ts: now(), text: note }], updated: now() } } })
-  logEvent('note', { region: regionId, geoid, label, detail: `Note on ${label}: "${note}"` })
+// The newest decision on a tract that has not been undone (only that one can be undone).
+export function latestDecision(history, regionId, geoid) {
+  return history.find((h) => h.type === 'decision' && !h.undone && h.region === regionId && h.geoid === geoid) || null
+}
+
+export function undoDecision(entryId) {
+  const entry = state.history.find((h) => h.id === entryId)
+  if (!entry || entry.type !== 'decision' || entry.undone) return
+  if (latestDecision(state.history, entry.region, entry.geoid)?.id !== entry.id) return
+  const key = decisionKey(entry.region, entry.geoid)
+  const decisions = { ...state.decisions }
+  if (entry.prev) decisions[key] = entry.prev
+  else delete decisions[key]
+  const undo = {
+    id: newId(), ts: now(), type: 'undo', region: entry.region, geoid: entry.geoid, label: entry.label,
+    detail: `Undid: ${entry.detail} (back to ${entry.prev ? entry.prev.status : 'pending review'})`,
+  }
+  commit({
+    decisions,
+    history: [undo, ...state.history.map((h) => (h.id === entry.id ? { ...h, undone: true } : h))].slice(0, MAX_HISTORY),
+  })
 }
 
 export function clearHistory() {

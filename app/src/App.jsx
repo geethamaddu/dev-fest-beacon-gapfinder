@@ -4,9 +4,8 @@ import Dashboard from './pages/Dashboard.jsx'
 import MapFinder from './pages/MapFinder.jsx'
 import History from './pages/History.jsx'
 import About from './pages/About.jsx'
-import { regionById } from './lib/regions.js'
-import { analyze, tractLabel } from './lib/classify.js'
-import { logEvent } from './lib/store.js'
+import { REGIONS, regionById } from './lib/regions.js'
+import { analyze } from './lib/classify.js'
 
 const PAGES = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -28,7 +27,6 @@ export default function App() {
   const [entries, setEntries] = useState({})
   const [error, setError] = useState(null)
   const [selected, setSelected] = useState(null) // { geoid, zoom }
-  const lastPage = useRef(null)
   const region = regionById(regionId)
   const entry = entries[regionId]
 
@@ -38,39 +36,36 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  // Load the selected region; the About page compares all regions, so it loads every one.
+  const loading = useRef(new Set())
   useEffect(() => {
-    if (lastPage.current === page) return
-    lastPage.current = page
-    logEvent('page', { region: regionId, detail: `Opened ${PAGES.find((p) => p.id === page).label}` })
-  }, [page, regionId])
-
-  useEffect(() => {
-    if (entries[regionId]) return
-    setError(null)
-    fetch(`${import.meta.env.BASE_URL}data/${regionId}.geojson`)
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then((fc) => setEntries((e) => ({ ...e, [regionId]: { fc, analysis: analyze(fc, regionById(regionId)) } })))
-      .catch((err) => setError(`Could not load data for ${regionById(regionId).name} (${err.message}). Run the pipeline first.`))
-  }, [regionId, entries])
+    const ids = page === 'about' ? REGIONS.map((r) => r.id) : [regionId]
+    for (const id of ids) {
+      if (entries[id] || loading.current.has(id)) continue
+      loading.current.add(id)
+      if (id === regionId) setError(null)
+      fetch(`${import.meta.env.BASE_URL}data/${id}.geojson`)
+        .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+        .then((fc) => setEntries((e) => ({ ...e, [id]: { fc, analysis: analyze(fc, regionById(id)) } })))
+        .catch((err) => { if (id === regionId) setError(`Could not load data for ${regionById(id).name} (${err.message}). Run the pipeline first.`) })
+        .finally(() => loading.current.delete(id))
+    }
+  }, [regionId, page, entries])
 
   function changeRegion(id) {
     setRegionId(id)
     setSelected(null)
     try { localStorage.setItem('bgf_region', id) } catch { /* ignore */ }
-    logEvent('region', { region: id, detail: `Switched region to ${regionById(id).name}` })
   }
 
-  function openTract(geoid, { zoom = false, goToMap = false, source = 'map' } = {}) {
+  // History records actions only (approve, reject, undo), so opening a tract is not logged.
+  function openTract(geoid, { zoom = false, goToMap = false } = {}) {
     setSelected({ geoid, zoom, at: Date.now() })
-    const f = entry?.fc.features.find((x) => x.properties.geoid === geoid)
-    const label = f ? tractLabel(f.properties) : geoid
-    const how = { map: 'on the map', dashboard: 'from the dashboard', history: 'from history', scenario: 'from a test scenario' }[source] || ''
-    logEvent(source === 'scenario' ? 'scenario' : 'tract', { region: regionId, geoid, label, detail: `Opened ${label} ${how}`.trim() })
     if (goToMap) window.location.hash = '#/map'
   }
 
   let body
-  if (page === 'about') body = <About />
+  if (page === 'about') body = <About entries={entries} />
   else if (page === 'history') body = <History onOpen={(r, g) => { if (r !== regionId) changeRegion(r); openTract(g, { zoom: true, goToMap: true, source: 'history' }) }} />
   else if (error) body = <div className="page"><div className="card error">{error}</div></div>
   else if (!entry) body = <div className="page"><div className="card">Loading {region.name} data...</div></div>
