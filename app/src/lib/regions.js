@@ -29,3 +29,7 @@ export const REGIONS = [
 ]
 
 export const regionById = (id) => REGIONS.find((r) => r.id === id) || REGIONS[0]
+
+// A tract GEOID starts with the state FIPS code; each region is in one state.
+const STATE_FIPS = { '12': 'central-florida', '36': 'nyc', '49': 'salt-lake-city' }
+export const regionIdForGeoid = (geoid) => STATE_FIPS[String(geoid).slice(0, 2)] || null

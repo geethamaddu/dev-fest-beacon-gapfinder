@@ -17,7 +17,6 @@ export default function Dashboard({ entry, region, onOpen }) {
   const rejected = regionDecisions.filter((s) => s === 'rejected').length
   const pending = flagged.filter((p) => statusOf(p) === 'pending').length
   const decided = approved + rejected
-  const review = analysis.counts.blind + analysis.counts.partial + analysis.counts.insufficient
 
   const byCounty = useMemo(() => {
     const m = {}
@@ -36,8 +35,8 @@ export default function Dashboard({ entry, region, onOpen }) {
     { label: 'Transportation-compounded', value: region.hasTransport ? analysis.counts.transport : 'N/A', color: TYPES.transport.color },
     { label: 'SNAP enrollment gaps', value: analysis.counts.snap, color: TYPES.snap.color },
     { label: 'Possible blind spots', value: analysis.counts.blind, color: TYPES.blind.color },
-    { label: 'Need human review', value: review },
-    { label: 'Decisions made', value: `${decided} (${approved} approved)` },
+    // Flagged tracts (any problem gap type) with no approve/reject yet; updates live as decisions are made or undone.
+    { label: 'Actions pending', value: `${pending} of ${flagged.length}` },
   ]
 
   return (

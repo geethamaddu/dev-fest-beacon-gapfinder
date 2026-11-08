@@ -18,7 +18,7 @@ export function StatusChip({ status }) {
   return <span className={`status status-${s}`}>{s === 'pending' ? 'Pending review' : s[0].toUpperCase() + s.slice(1)}</span>
 }
 
-export default function TractDetail({ p, region, Q }) {
+export default function TractDetail({ p, region, Q, onAsk }) {
   const { decisions, history } = useStore()
   const [note, setNote] = useState('')
   const label = tractLabel(p)
@@ -45,6 +45,9 @@ export default function TractDetail({ p, region, Q }) {
       <div className="kv"><span>Confidence</span><b>{p._conf}</b></div>
       {p._types.includes('snap') && <div className="kv"><span>SNAP estimate confidence</span><b>{p._snapConf}</b></div>}
       <div className="kv"><span>Review tier</span><b>{p._tier}</b></div>
+      {onAsk && (
+        <button className="btn ask-tract" onClick={() => onAsk(p)}>Ask about this tract</button>
+      )}
 
       <p className="lbl">Supporting evidence</p>
       <ul>
